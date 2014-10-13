@@ -50,6 +50,8 @@ final class HttpReadListener implements ChannelListener<ConduitStreamSourceChann
 
     private static final String BAD_REQUEST = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
+    private static final int MIN_PARSE_TIMEOUT = 50;
+
     private final HttpServerConnection connection;
     private final ParseState state = new ParseState();
     private final HttpRequestParser parser;
@@ -70,6 +72,8 @@ final class HttpReadListener implements ChannelListener<ConduitStreamSourceChann
 
     private final ConnectorStatisticsImpl connectorStatistics;
 
+    //-1 - disabled
+    private final int requestParseTimeout;
 
     HttpReadListener(final HttpServerConnection connection, final HttpRequestParser parser, ConnectorStatisticsImpl connectorStatistics) {
         this.connection = connection;
@@ -78,7 +82,7 @@ final class HttpReadListener implements ChannelListener<ConduitStreamSourceChann
         this.maxRequestSize = connection.getUndertowOptions().get(UndertowOptions.MAX_HEADER_SIZE, UndertowOptions.DEFAULT_MAX_HEADER_SIZE);
         this.maxEntitySize = connection.getUndertowOptions().get(UndertowOptions.MAX_ENTITY_SIZE, UndertowOptions.DEFAULT_MAX_ENTITY_SIZE);
         this.recordRequestStartTime = connection.getUndertowOptions().get(UndertowOptions.RECORD_REQUEST_START_TIME, false);
-
+        this.requestParseTimeout = connection.getUndertowOptions().get(UndertowOptions.REQUEST_PARSE_TIMEOUT, -1);
     }
 
     public void newRequest() {
@@ -108,6 +112,7 @@ final class HttpReadListener implements ChannelListener<ConduitStreamSourceChann
             return;
         }
 
+        long parseStartTime = System.currentTimeMillis();
 
         final Pooled<ByteBuffer> pooled = existing == null ? connection.getBufferPool().allocate() : existing;
         final ByteBuffer buffer = pooled.getResource();
@@ -150,6 +155,14 @@ final class HttpReadListener implements ChannelListener<ConduitStreamSourceChann
                     UndertowLogger.REQUEST_LOGGER.requestHeaderWasTooLarge(connection.getPeerAddress(), maxRequestSize);
                     IoUtils.safeClose(connection);
                     return;
+                }
+                if(requestParseTimeout > -1) {
+                    long parsingTimeTaken = System.currentTimeMillis() - parseStartTime;
+                    if(parsingTimeTaken > requestParseTimeout + MIN_PARSE_TIMEOUT) {
+                        UndertowLogger.REQUEST_LOGGER.parseRequestTimedOut(parsingTimeTaken, requestParseTimeout);
+                        IoUtils.safeClose(connection);
+                        return;
+                    }
                 }
             } while (!state.isComplete());
 

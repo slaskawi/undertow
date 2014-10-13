@@ -52,7 +52,7 @@ import java.nio.ByteBuffer;
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
-public final class HttpServerConnection extends AbstractServerConnection {
+public class HttpServerConnection extends AbstractServerConnection {
 
     private SSLSessionInfo sslSessionInfo;
     private HttpReadListener readListener;
